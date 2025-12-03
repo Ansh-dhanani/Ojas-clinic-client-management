@@ -1,0 +1,314 @@
+// This is your Prisma schema file
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  DOCTOR
+  STAFF
+  CLIENT
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+}
+
+enum SkinType {
+  OILY
+  DRY
+  COMBINATION
+  SENSITIVE
+}
+
+enum ClientStatus {
+  PENDING       // New client, no sessions yet
+  ACTIVE        // Has ongoing treatment sessions
+  COMPLETED     // Treatment completed successfully
+  INACTIVE      // Paused treatment temporarily
+  GHOSTED       // Missed appointments, not responding
+  CANCELLED     // Client cancelled treatment
+}
+
+enum AcneSeverity {
+  MILD
+  MODERATE
+  SEVERE
+}
+
+enum ScarType {
+  ICE_PICK
+  BOXCAR
+  ROLLING
+  HYPERTROPHIC
+  KELOID
+}
+
+enum PigmentationLevel {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum HairDensity {
+  THIN
+  MEDIUM
+  THICK
+}
+
+enum PaymentMethod {
+  CASH
+  UPI
+  CARD
+  ONLINE
+}
+
+enum PaymentStatus {
+  PAID
+  PENDING
+  PARTIAL
+  OVERDUE
+  UPCOMING
+}
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  password      String
+  name          String
+  role          UserRole  @default(STAFF)
+  phone         String?
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  sessions      Session[] @relation("DoctorSessions")
+  appointments  Appointment[]
+}
+
+model Client {
+  id                String        @id @default(cuid())
+  clientId          String        @unique
+  fullName          String
+  gender            Gender
+  dateOfBirth       DateTime
+  phone             String
+  whatsapp          String?
+  email             String?
+  address           String?
+  profilePhoto      String?
+  
+  skinType          SkinType?
+  skinConcerns      String?
+  allergies         String?
+  pastConditions    String?
+  ongoingMeds       String?
+  
+  howFound          String?
+  firstVisitDate    DateTime      @default(now())
+  concernCategory   String[]
+  
+  status            ClientStatus  @default(PENDING)
+  lastVisitDate     DateTime?
+  nextAppointmentDate DateTime?
+  totalSessionsCompleted Int     @default(0)
+  totalSessionsNeeded Int?
+  missedAppointments Int         @default(0)
+  
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+  
+  sessions          Session[]
+  clientPackages    ClientPackage[]
+  payments          Payment[]
+  appointments      Appointment[]
+}
+
+model Session {
+  id                    String    @id @default(cuid())
+  sessionNumber         String
+  date                  DateTime  @default(now())
+  category              String
+  
+  clientId              String
+  client                Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  doctorId              String
+  doctor                User      @relation("DoctorSessions", fields: [doctorId], references: [id])
+  
+  beforeCondition       String?
+  acneSeverity          AcneSeverity?
+  scarType              ScarType?
+  pigmentationLevel     PigmentationLevel?
+  glowDullnessScale     Int?
+  hairDensity           HairDensity?
+  textureRoughness      Int?
+  poreVisibility        Int?
+  hasInflammation       Boolean   @default(false)
+  beforePhotos          String[]
+  
+  treatmentsPerformed   String[]
+  productsUsed          String[]
+  
+  afterNotes            String?
+  immediateOutcome      String?
+  sideEffects           String?
+  afterPhotos           String[]
+  
+  nextSessionDate       DateTime?
+  expectedResultTime    String?
+  postCareInstructions  String?
+  doctorSuggestions     String?
+  prescribedMedicines   String?
+  treatmentCompleted    Boolean   @default(false)
+  
+  paymentAmount         Float?
+  paymentMethod         PaymentMethod?
+  paymentStatus         PaymentStatus @default(PENDING)
+  paymentDate           DateTime?
+  paymentNotes          String?
+  
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  
+  recommendations       Recommendation[]
+  sessionPayments       SessionPayment[]
+}
+
+model Package {
+  id                String    @id @default(cuid())
+  name              String
+  category          String
+  description       String?
+  numberOfSessions  Int
+  actualPrice       Float
+  discountedPrice   Float
+  validityMonths    Int
+  isActive          Boolean   @default(true)
+  
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  
+  clientPackages    ClientPackage[]
+}
+
+model ClientPackage {
+  id                String    @id @default(cuid())
+  
+  clientId          String
+  client            Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  
+  packageId         String
+  package           Package   @relation(fields: [packageId], references: [id])
+  
+  purchaseDate      DateTime  @default(now())
+  expiryDate        DateTime
+  totalSessions     Int
+  completedSessions Int       @default(0)
+  remainingSessions Int
+  
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+}
+
+model Payment {
+  id                String        @id @default(cuid())
+  invoiceId         String        @unique
+  
+  clientId          String
+  client            Client        @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  
+  date              DateTime      @default(now())
+  service           String
+  amount            Float
+  discount          Float         @default(0)
+  gst               Float         @default(0)
+  totalAmount       Float
+  paidAmount        Float
+  pendingAmount     Float         @default(0)
+  
+  paymentMethod     PaymentMethod
+  paymentStatus     PaymentStatus @default(PENDING)
+  
+  dueDate           DateTime?
+  
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+}
+
+model Recommendation {
+  id                String    @id @default(cuid())
+  
+  sessionId         String
+  session           Session   @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  
+  type              String
+  reason            String
+  suggestedProducts String[]
+  followUpDays      Int
+  priority          String
+  
+  isApproved        Boolean   @default(false)
+  approvedBy        String?
+  
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+}
+
+model SessionPayment {
+  id                String        @id @default(cuid())
+  
+  sessionId         String
+  session           Session       @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  
+  amount            Float
+  paymentMethod     PaymentMethod
+  paymentDate       DateTime      @default(now())
+  notes             String?
+  
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+}
+
+model Appointment {
+  id                String    @id @default(cuid())
+  
+  clientId          String
+  client            Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  
+  doctorId          String?
+  doctor            User?     @relation(fields: [doctorId], references: [id])
+  
+  date              DateTime
+  time              String
+  duration          Int
+  service           String
+  status            String    @default("SCHEDULED")
+  notes             String?
+  
+  reminderSent      Boolean   @default(false)
+  
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+}
+
+model Product {
+  id                String    @id @default(cuid())
+  name              String
+  category          String
+  batchNumber       String?
+  expiryDate        DateTime?
+  quantity          Int
+  minStockLevel     Int       @default(10)
+  unitPrice         Float
+  
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+}
