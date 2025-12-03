@@ -87,6 +87,17 @@ export default function ClientDetailPage({ params }: { params: { id: string } })
     setEditData(null)
   }
 
+  const handleStatusUpdate = async (newStatus: string) => {
+    const res = await fetch(`/api/clients/${client?.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: newStatus }),
+    })
+    if (!res.ok) throw new Error('Failed to update status')
+    await queryClient.invalidateQueries({ queryKey: ['client', params.id] })
+    await queryClient.invalidateQueries({ queryKey: ['clients'] })
+  }
+
   if (status === 'unauthenticated') {
     router.push('/login')
     return null
@@ -213,6 +224,7 @@ export default function ClientDetailPage({ params }: { params: { id: string } })
                   isEditing={isEditing}
                   editData={editData}
                   setEditData={setEditData}
+                  onStatusUpdate={handleStatusUpdate}
                 />
                 
                 <PersonalInfoSection 

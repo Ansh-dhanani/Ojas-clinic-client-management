@@ -1,4 +1,7 @@
-import React from 'react'
+'use client'
+
+import React, { useState } from 'react'
+import toast from 'react-hot-toast'
 
 interface ClientStatusInfoProps {
   client: any
@@ -6,10 +9,13 @@ interface ClientStatusInfoProps {
   isEditing?: boolean
   editData?: any
   setEditData?: (data: any) => void
+  onStatusUpdate?: (newStatus: string) => Promise<void>
 }
 
-export function ClientStatusInfo({ client, sessions, isEditing, editData, setEditData }: ClientStatusInfoProps) {
+export function ClientStatusInfo({ client, sessions, isEditing, editData, setEditData, onStatusUpdate }: ClientStatusInfoProps) {
   const now = new Date()
+  const [isUpdatingStatus, setIsUpdatingStatus] = useState(false)
+  const [showStatusDropdown, setShowStatusDropdown] = useState(false)
   
   // Calculate days since last visit
   const lastSession = sessions[sessions.length - 1]
@@ -26,6 +32,27 @@ export function ClientStatusInfo({ client, sessions, isEditing, editData, setEdi
     ? Math.floor((new Date(nextAppointment.nextSessionDate).getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
     : null
 
+  // Check for overdue appointments (next session date has passed but no new session created)
+  const overdueAppointments = sessions.filter(s => {
+    if (!s.nextSessionDate) return false
+    const nextDate = new Date(s.nextSessionDate)
+    // Check if next session date has passed and no session exists after it
+    if (nextDate < now) {
+      const hasSessionAfter = sessions.some(session => 
+        new Date(session.date) > nextDate
+      )
+      return !hasSessionAfter
+    }
+    return false
+  })
+  const hasOverdueAppointments = overdueAppointments.length > 0
+  const oldestOverdueDate = hasOverdueAppointments 
+    ? new Date(Math.min(...overdueAppointments.map(s => new Date(s.nextSessionDate).getTime())))
+    : null
+  const daysOverdue = oldestOverdueDate
+    ? Math.floor((now.getTime() - oldestOverdueDate.getTime()) / (1000 * 60 * 60 * 24))
+    : null
+
   // Auto-calculate status reason
   const getAutoStatusReason = () => {
     const totalSessions = sessions.length
@@ -38,8 +65,29 @@ export function ClientStatusInfo({ client, sessions, isEditing, editData, setEdi
       return { autoStatus: 'COMPLETED', reason: 'Treatment course completed successfully' }
     }
     
+    // Check for GHOSTED status - multiple conditions
+    // 1. Has overdue appointment(s) that were never attended (14+ days overdue)
+    if (hasOverdueAppointments && daysOverdue && daysOverdue >= 14) {
+      return { 
+        autoStatus: 'GHOSTED', 
+        reason: `Missed appointment ${daysOverdue} days ago, no follow-up session` 
+      }
+    }
+    
+    // 2. Long time without contact + multiple missed appointments + no upcoming appointment
     if (daysSinceLastVisit && daysSinceLastVisit > 60 && !nextAppointment && client.missedAppointments >= 2) {
-      return { autoStatus: 'GHOSTED', reason: `No contact for ${daysSinceLastVisit} days, ${client.missedAppointments} missed appointments` }
+      return { 
+        autoStatus: 'GHOSTED', 
+        reason: `No contact for ${daysSinceLastVisit} days, ${client.missedAppointments} missed appointments` 
+      }
+    }
+    
+    // 3. Has overdue appointment (7-13 days) - mark as INACTIVE for now
+    if (hasOverdueAppointments && daysOverdue && daysOverdue >= 7 && daysOverdue < 14) {
+      return { 
+        autoStatus: 'INACTIVE', 
+        reason: `Appointment overdue by ${daysOverdue} days - needs follow-up` 
+      }
     }
     
     if (nextAppointment || (daysSinceLastVisit && daysSinceLastVisit <= 45)) {
@@ -61,6 +109,22 @@ export function ClientStatusInfo({ client, sessions, isEditing, editData, setEdi
   const { autoStatus, reason } = getAutoStatusReason()
   const currentStatus = isEditing && editData ? editData.status : client.status
   const isManualOverride = currentStatus !== autoStatus
+
+  // Handle quick status update
+  const handleQuickStatusUpdate = async (newStatus: string) => {
+    if (!onStatusUpdate) return
+    
+    setIsUpdatingStatus(true)
+    try {
+      await onStatusUpdate(newStatus)
+      setShowStatusDropdown(false)
+      toast.success('Status updated successfully!')
+    } catch (error) {
+      toast.error('Failed to update status')
+    } finally {
+      setIsUpdatingStatus(false)
+    }
+  }
 
   // Get status badge styling
   const getStatusBadge = (status: string) => {
@@ -136,18 +200,100 @@ export function ClientStatusInfo({ client, sessions, isEditing, editData, setEdi
                 <option value="CANCELLED">✕ Cancelled</option>
               </select>
             ) : (
-              <span className={`inline-block px-4 py-2 rounded-lg font-semibold text-sm border-2 ${getStatusBadge(currentStatus)}`}>
-                {currentStatus === 'PENDING' && '⏳ Pending'}
-                {currentStatus === 'ACTIVE' && '✓ Active'}
-                {currentStatus === 'COMPLETED' && '🎉 Completed'}
-                {currentStatus === 'INACTIVE' && '⏸ Inactive'}
-                {currentStatus === 'GHOSTED' && '👻 Ghosted'}
-                {currentStatus === 'CANCELLED' && '✕ Cancelled'}
-              </span>
+              <div className="flex items-center gap-3">
+                <span className={`inline-block px-4 py-2 rounded-lg font-semibold text-sm border-2 ${getStatusBadge(currentStatus)}`}>
+                  {currentStatus === 'PENDING' && '⏳ Pending'}
+                  {currentStatus === 'ACTIVE' && '✓ Active'}
+                  {currentStatus === 'COMPLETED' && '🎉 Completed'}
+                  {currentStatus === 'INACTIVE' && '⏸ Inactive'}
+                  {currentStatus === 'GHOSTED' && '👻 Ghosted'}
+                  {currentStatus === 'CANCELLED' && '✕ Cancelled'}
+                </span>
+                
+                {/* Quick Status Update Dropdown */}
+                {onStatusUpdate && (
+                  <div className="relative">
+                    <button
+                      onClick={() => setShowStatusDropdown(!showStatusDropdown)}
+                      disabled={isUpdatingStatus}
+                      className="px-3 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                    >
+                      {isUpdatingStatus ? (
+                        <>
+                          <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
+                          Updating...
+                        </>
+                      ) : (
+                        <>
+                          <span>Update Status</span>
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                          </svg>
+                        </>
+                      )}
+                    </button>
+                    
+                    {showStatusDropdown && !isUpdatingStatus && (
+                      <>
+                        {/* Backdrop to close dropdown */}
+                        <div 
+                          className="fixed inset-0 z-10" 
+                          onClick={() => setShowStatusDropdown(false)}
+                        ></div>
+                        
+                        <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-xl border border-gray-200 py-2 z-20">
+                          <button
+                            onClick={() => handleQuickStatusUpdate('PENDING')}
+                            className="w-full text-left px-4 py-2 text-sm hover:bg-yellow-50 flex items-center gap-2"
+                          >
+                            <span>⏳</span>
+                            <span>Pending</span>
+                          </button>
+                          <button
+                            onClick={() => handleQuickStatusUpdate('ACTIVE')}
+                            className="w-full text-left px-4 py-2 text-sm hover:bg-green-50 flex items-center gap-2"
+                          >
+                            <span>✓</span>
+                            <span>Active</span>
+                          </button>
+                          <button
+                            onClick={() => handleQuickStatusUpdate('COMPLETED')}
+                            className="w-full text-left px-4 py-2 text-sm hover:bg-blue-50 flex items-center gap-2"
+                          >
+                            <span>🎉</span>
+                            <span>Completed</span>
+                          </button>
+                          <button
+                            onClick={() => handleQuickStatusUpdate('INACTIVE')}
+                            className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 flex items-center gap-2"
+                          >
+                            <span>⏸</span>
+                            <span>Inactive</span>
+                          </button>
+                          <div className="border-t border-gray-200 my-1"></div>
+                          <button
+                            onClick={() => handleQuickStatusUpdate('GHOSTED')}
+                            className="w-full text-left px-4 py-2 text-sm hover:bg-red-50 flex items-center gap-2 text-red-700"
+                          >
+                            <span>👻</span>
+                            <span>Ghosted</span>
+                          </button>
+                          <button
+                            onClick={() => handleQuickStatusUpdate('CANCELLED')}
+                            className="w-full text-left px-4 py-2 text-sm hover:bg-red-50 flex items-center gap-2 text-red-700"
+                          >
+                            <span>✕</span>
+                            <span>Cancelled</span>
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
             )}
           </div>
-          <div className="ml-4 flex-shrink-0">
-            {isManualOverride && (
+          <div className="ml-4 flex-shrink-0">{isManualOverride && (
               <span className="px-3 py-1 bg-orange-100 text-orange-800 text-xs font-semibold rounded-full border border-orange-300">
                 Manual Override
               </span>
