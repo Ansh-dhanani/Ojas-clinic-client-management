@@ -222,6 +222,7 @@ export function AddSessionModal({ clientId, sessionNumber, onClose }: AddSession
                 value={formData.category}
                 onChange={(e) => setFormData({ ...formData, category: e.target.value })}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                data-testid="session-category-select"
               >
                 <option value="">Select category</option>
                 <option value="Acne Treatment">Acne Treatment</option>
@@ -243,6 +244,7 @@ export function AddSessionModal({ clientId, sessionNumber, onClose }: AddSession
                   checkSessionsOnDate(e.target.value)
                 }}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                data-testid="session-date-input"
               />
               {formData.nextSessionDate && sessionsOnDate > 0 && new Date(formData.nextSessionDate) > new Date() && (
                 <p className="mt-1 text-sm text-orange-600 font-medium">
@@ -258,6 +260,7 @@ export function AddSessionModal({ clientId, sessionNumber, onClose }: AddSession
                   checked={formData.treatmentCompleted}
                   onChange={(e) => setFormData({ ...formData, treatmentCompleted: e.target.checked })}
                   className="w-6 h-6 text-blue-600 rounded focus:ring-blue-500 cursor-pointer"
+                  data-testid="treatment-completed-checkbox-main"
                 />
                 <span className="text-lg font-semibold text-blue-900">✓ Mark Treatment as Completed</span>
               </label>

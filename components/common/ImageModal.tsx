@@ -30,7 +30,10 @@ export function ImageModal({ src, alt, onClose }: ImageModalProps) {
     >
       {/* Close button */}
       <button
-        onClick={onClose}
+        onClick={(e) => {
+          e.stopPropagation()
+          onClose()
+        }}
         className="absolute top-4 right-4 text-white hover:text-gray-300 transition z-[10000]"
         aria-label="Close"
       >

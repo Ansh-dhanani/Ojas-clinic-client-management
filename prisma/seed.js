@@ -134,10 +134,10 @@ async function main() {
   ]);
   console.log('✅ Created sample products:', products.length);
 
-  // Create sample clients with diverse status states
+  // Create sample clients with diverse scenarios for auto-status calculation
   const now = new Date();
   const clients = await Promise.all([
-    // PENDING - New client, no sessions yet
+    // New client, no sessions yet - Will auto-calculate to PENDING
     prisma.client.upsert({
       where: { clientId: 'CL0001' },
       update: {},
@@ -152,12 +152,11 @@ async function main() {
         address: '123 MG Road, Mumbai, Maharashtra',
         skinType: 'COMBINATION',
         skinConcerns: 'Acne, Dark spots',
-        status: 'PENDING',
         totalSessionsCompleted: 0,
         missedAppointments: 0
       }
     }),
-    // ACTIVE - Recent session, upcoming appointment
+    // Recent session (10 days ago), upcoming appointment - Will auto-calculate to ACTIVE
     prisma.client.upsert({
       where: { clientId: 'CL0002' },
       update: {},
@@ -172,14 +171,13 @@ async function main() {
         address: '456 Park Street, Delhi',
         skinType: 'OILY',
         skinConcerns: 'Acne scars, Oily skin',
-        status: 'ACTIVE',
         lastVisitDate: new Date(now.getTime() - 10 * 24 * 60 * 60 * 1000), // 10 days ago
         nextAppointmentDate: new Date(now.getTime() + 5 * 24 * 60 * 60 * 1000), // 5 days from now
         totalSessionsCompleted: 3,
         missedAppointments: 0
       }
     }),
-    // ACTIVE - Recent visit, no upcoming appointment scheduled yet
+    // Recent visit (20 days ago), no upcoming appointment - Will auto-calculate to ACTIVE
     prisma.client.upsert({
       where: { clientId: 'CL0003' },
       update: {},
@@ -194,13 +192,12 @@ async function main() {
         address: '789 Link Road, Ahmedabad, Gujarat',
         skinType: 'DRY',
         skinConcerns: 'Pigmentation, Dull skin',
-        status: 'ACTIVE',
         lastVisitDate: new Date(now.getTime() - 20 * 24 * 60 * 60 * 1000), // 20 days ago
         totalSessionsCompleted: 2,
         missedAppointments: 0
       }
     }),
-    // COMPLETED - Treatment finished
+    // Treatment finished - Will have treatmentCompleted=true in last session, auto-calculates to COMPLETED
     prisma.client.upsert({
       where: { clientId: 'CL0004' },
       update: {},
@@ -215,13 +212,12 @@ async function main() {
         address: '321 Civil Lines, Jaipur, Rajasthan',
         skinType: 'COMBINATION',
         skinConcerns: 'Anti-aging, Fine lines',
-        status: 'COMPLETED',
         lastVisitDate: new Date(now.getTime() - 15 * 24 * 60 * 60 * 1000), // 15 days ago
         totalSessionsCompleted: 8,
         missedAppointments: 0
       }
     }),
-    // INACTIVE - Haven't visited in 50 days, 1 missed appointment
+    // Haven't visited in 50 days, 1 missed appointment - Will auto-calculate to INACTIVE
     prisma.client.upsert({
       where: { clientId: 'CL0005' },
       update: {},
@@ -236,13 +232,12 @@ async function main() {
         address: '567 Banjara Hills, Hyderabad, Telangana',
         skinType: 'SENSITIVE',
         skinConcerns: 'Redness, Sensitive skin',
-        status: 'INACTIVE',
         lastVisitDate: new Date(now.getTime() - 50 * 24 * 60 * 60 * 1000), // 50 days ago
         totalSessionsCompleted: 2,
         missedAppointments: 1
       }
     }),
-    // GHOSTED - Haven't visited in 70 days, 2 missed appointments
+    // Haven't visited in 70 days, 2 missed appointments - Will auto-calculate to GHOSTED
     prisma.client.upsert({
       where: { clientId: 'CL0006' },
       update: {},
@@ -256,13 +251,12 @@ async function main() {
         address: '890 Residency Road, Bangalore, Karnataka',
         skinType: 'OILY',
         skinConcerns: 'Acne, Blackheads',
-        status: 'GHOSTED',
         lastVisitDate: new Date(now.getTime() - 70 * 24 * 60 * 60 * 1000), // 70 days ago
         totalSessionsCompleted: 1,
         missedAppointments: 2
       }
     }),
-    // ACTIVE - Overdue appointment (appointment was 3 days ago, didn't show up)
+    // Overdue appointment (was 3 days ago, didn't show up) - Will auto-calculate to ACTIVE
     prisma.client.upsert({
       where: { clientId: 'CL0007' },
       update: {},
@@ -276,14 +270,13 @@ async function main() {
         address: '234 Marine Drive, Kochi, Kerala',
         skinType: 'DRY',
         skinConcerns: 'Dry skin, Wrinkles',
-        status: 'ACTIVE',
         lastVisitDate: new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000), // 30 days ago
         nextAppointmentDate: new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000), // 3 days ago (overdue!)
         totalSessionsCompleted: 4,
         missedAppointments: 1
       }
     }),
-    // CANCELLED - Client decided to stop treatment
+    // Manually cancelled - Set to CANCELLED (won't auto-update)
     prisma.client.upsert({
       where: { clientId: 'CL0008' },
       update: {},
@@ -297,7 +290,7 @@ async function main() {
         address: '678 Sector 17, Chandigarh',
         skinType: 'COMBINATION',
         skinConcerns: 'Uneven skin tone',
-        status: 'CANCELLED',
+        status: 'CANCELLED', // Manually set, won't be auto-updated
         lastVisitDate: new Date(now.getTime() - 25 * 24 * 60 * 60 * 1000), // 25 days ago
         totalSessionsCompleted: 2,
         missedAppointments: 0
@@ -1058,6 +1051,19 @@ async function main() {
   ]);
   console.log('✅ Created sample session payments:', sessionPayments.length);
 
+  // Update all client statuses based on their sessions and activity
+  console.log('🔄 Auto-calculating client statuses...');
+  const { updateClientStatus } = require('../lib/client-status');
+  
+  for (const client of clients) {
+    try {
+      const result = await updateClientStatus(client.id);
+      console.log(`   Client ${client.clientId} (${client.fullName}): ${result.newStatus} - ${result.reason}`);
+    } catch (error) {
+      console.error(`   Failed to update status for ${client.clientId}:`, error.message);
+    }
+  }
+
   console.log('🎉 Database seeding completed!');
   console.log('\n📝 Login Credentials:');
   console.log('Admin: admin@ojasclinic.com / admin123');
@@ -1065,6 +1071,7 @@ async function main() {
   console.log('Staff: staff@ojasclinic.com / admin123');
   console.log('\n👥 Sample Clients: 8 clients created');
   console.log('💰 Sample Payments: ' + sessionPayments.length + ' payment records created');
+  console.log('✅ All client statuses auto-calculated based on activity');
 }
 
 main()
